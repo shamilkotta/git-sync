@@ -47,10 +47,7 @@ export class MobileGitBackend implements GitBackend {
     await git.commit({
       ...repo,
       message: this.createCommitMessage(trigger),
-      author: {
-        name: this.settings.username || "obsidian-user",
-        email: `${this.settings.username || "obsidian"}@users.noreply.github.com`,
-      },
+      author: this.syncAuthor(),
     });
     committed = true;
 
@@ -147,6 +144,8 @@ export class MobileGitBackend implements GitBackend {
       ours: branch,
       theirs: `${this.settings.remoteName}/${branch}`,
       fastForwardOnly: false,
+      author: this.syncAuthor(),
+      committer: this.syncAuthor(),
     });
     return true;
   }
@@ -191,5 +190,13 @@ export class MobileGitBackend implements GitBackend {
 
   private createCommitMessage(trigger: string): string {
     return `vault sync: ${trigger} @ ${new Date().toISOString()}`;
+  }
+
+  private syncAuthor(): { name: string; email: string } {
+    const name = this.settings.username || "obsidian-user";
+    return {
+      name,
+      email: `${this.settings.username || "obsidian"}@users.noreply.github.com`,
+    };
   }
 }
