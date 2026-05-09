@@ -1,4 +1,4 @@
-import { Notice, PluginSettingTab, Setting } from "obsidian";
+import { PluginSettingTab, Setting } from "obsidian";
 import type AutoGitSyncPlugin from "./main";
 
 export class AutoGitSyncSettingTab extends PluginSettingTab {
@@ -13,7 +13,7 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Auto GitHub Sync (Minimal)" });
+    containerEl.createEl("h2", { text: "Git Sync" });
 
     new Setting(containerEl)
       .setName("Remote name")
@@ -96,7 +96,6 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
           .setCta()
           .onClick(async () => {
             await this.plugin.syncNow("manual");
-            new Notice("Auto GitHub Sync: sync requested.");
           }),
       );
   }

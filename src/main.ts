@@ -41,8 +41,6 @@ export default class AutoGitSyncPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("modify", onVaultChange));
     this.registerEvent(this.app.vault.on("delete", onVaultChange));
     this.registerEvent(this.app.vault.on("rename", onVaultChange));
-
-    new Notice("Minimal Git Sync loaded.");
   }
 
   onunload(): void {
@@ -127,13 +125,18 @@ export default class AutoGitSyncPlugin extends Plugin {
       this.skipEventsUntil = Date.now() + Math.max(1500, this.settings.syncDebounceMs / 2);
       const result = await this.gitBackend.sync(mode, trigger);
       this.skipEventsUntil = Date.now() + Math.max(1500, this.settings.syncDebounceMs / 2);
-      if (mode !== "startup" || result.committed || result.pushed) {
-        new Notice(`Minimal Git Sync: ${result.message}`);
+      if (this.isManualSuccessNoticeTrigger(trigger)) {
+        new Notice(`Git Sync: ${result.message}`);
       }
     } catch (error) {
-      console.error("Minimal Git Sync failed", error);
-      new Notice(`Minimal Git Sync failed: ${this.getErrorMessage(error)}`);
+      console.error("Git Sync failed", error);
+      new Notice(`Git Sync failed: ${this.getErrorMessage(error)}`);
     }
+  }
+
+  /** Success toasts only for explicit user actions (command palette / settings). */
+  private isManualSuccessNoticeTrigger(trigger: string): boolean {
+    return trigger === "command" || trigger === "manual";
   }
 
   private getErrorMessage(error: unknown): string {

@@ -29,10 +29,11 @@ export class MobileGitBackend implements GitBackend {
     await this.ensureRemote(repo);
 
     const branch = await this.getOrCreateBranch(repo);
-    const pulled = await this.pull(repo, branch);
-
     const hasChanges = await this.stageAll(repo);
+    let committed = false;
+
     if (!hasChanges) {
+      const pulled = await this.pull(repo, branch);
       return {
         pulled,
         committed: false,
@@ -49,16 +50,14 @@ export class MobileGitBackend implements GitBackend {
         email: `${this.settings.username || "obsidian"}@users.noreply.github.com`,
       },
     });
+    committed = true;
 
-    await git.push({
-      ...repo,
-      remote: this.settings.remoteName,
-      ref: branch,
-    });
+    const pulled = await this.pull(repo, branch);
+    await this.pushWithRetry(repo, branch);
 
     return {
       pulled,
-      committed: true,
+      committed,
       pushed: true,
       message: "Committed and pushed vault changes.",
     };
@@ -144,6 +143,23 @@ export class MobileGitBackend implements GitBackend {
       fastForwardOnly: false,
     });
     return true;
+  }
+
+  private async pushWithRetry(repo: GitRepoParams, branch: string): Promise<void> {
+    try {
+      await this.push(repo, branch);
+    } catch {
+      await this.pull(repo, branch);
+      await this.push(repo, branch);
+    }
+  }
+
+  private async push(repo: GitRepoParams, branch: string): Promise<void> {
+    await git.push({
+      ...repo,
+      remote: this.settings.remoteName,
+      ref: branch,
+    });
   }
 
   private async stageAll(repo: GitRepoParams): Promise<boolean> {

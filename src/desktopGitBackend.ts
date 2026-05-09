@@ -40,37 +40,30 @@ export class DesktopGitBackend implements GitBackend {
     await this.ensureRepository();
 
     const branch = await this.getBranch();
-    await this.git(["pull", "--ff-only", this.settings.remoteName, branch]);
-
-    if (mode === "startup") {
-      const hasChanges = await this.hasChanges();
-      if (!hasChanges) {
-        return {
-          pulled: true,
-          committed: false,
-          pushed: false,
-          message: "Pulled latest changes.",
-        };
-      }
-    }
-
     const hasChanges = await this.hasChanges();
+    let committed = false;
+    let pulled = false;
+
     if (!hasChanges) {
+      pulled = await this.rebaseFromRemote(branch);
       return {
-        pulled: true,
+        pulled,
         committed: false,
         pushed: false,
-        message: "Already up to date.",
+        message: pulled ? "Pulled latest changes." : "Already up to date.",
       };
     }
 
     await this.git(["add", "-A"]);
     await this.git(["commit", "-m", this.createCommitMessage(trigger)]);
-    await this.git(["push", this.settings.remoteName, branch]);
+    committed = true;
+
+    pulled = await this.rebaseFromRemote(branch);
+    await this.pushWithRetry(branch);
 
     return {
-      pulled: true,
-      committed: true,
+      pulled,
+      committed,
       pushed: true,
       message: "Committed and pushed vault changes.",
     };
@@ -98,6 +91,40 @@ export class DesktopGitBackend implements GitBackend {
   private async hasChanges(): Promise<boolean> {
     const status = await this.git(["status", "--porcelain"]);
     return status.trim().length > 0;
+  }
+
+  private async rebaseFromRemote(branch: string): Promise<boolean> {
+    await this.git(["fetch", this.settings.remoteName]);
+
+    const hasRemoteBranch = await this.hasRemoteBranch(branch);
+    if (!hasRemoteBranch) {
+      return false;
+    }
+
+    try {
+      await this.git(["rebase", `${this.settings.remoteName}/${branch}`]);
+      return true;
+    } catch (error) {
+      await this.git(["rebase", "--abort"], true);
+      throw error;
+    }
+  }
+
+  private async hasRemoteBranch(branch: string): Promise<boolean> {
+    const result = await this.git(
+      ["rev-parse", "--verify", "--quiet", `${this.settings.remoteName}/${branch}`],
+      true,
+    );
+    return result.trim().length > 0;
+  }
+
+  private async pushWithRetry(branch: string): Promise<void> {
+    try {
+      await this.git(["push", this.settings.remoteName, branch]);
+    } catch {
+      await this.rebaseFromRemote(branch);
+      await this.git(["push", this.settings.remoteName, branch]);
+    }
   }
 
   private async git(args: string[], allowFailure = false): Promise<string> {
