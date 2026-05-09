@@ -85,6 +85,26 @@ jobs:
           git tag -a "${{ steps.meta.outputs.version }}" -m "Release ${{ steps.meta.outputs.version }}"
           git push origin "${{ steps.meta.outputs.version }}"
 
+      # Zip layout: <plugin-id>/manifest.json|main.js|styles.css — extract into .obsidian/plugins/
+      - name: Create plugin install zip
+        if: steps.meta.outputs.skip != 'true'
+        id: bundle
+        run: |
+          set -euo pipefail
+          PLUGIN_ID=$(jq -r .id manifest.json)
+          VERSION=$(jq -r .version manifest.json)
+          DISPLAY_NAME=$(jq -r .name manifest.json)
+          SLUG=$(printf '%s' "$DISPLAY_NAME" | tr '[:upper:]' '[:lower:]' | tr -s ' ' '-' | tr -cd 'a-z0-9.-')
+          if [ -z "$SLUG" ]; then SLUG="$PLUGIN_ID"; fi
+          ZIP_NAME="${SLUG}-${VERSION}.zip"
+          rm -rf dist
+          mkdir -p "dist/${PLUGIN_ID}"
+          cp manifest.json main.js styles.css "dist/${PLUGIN_ID}/"
+          (cd dist && zip -rq "../${ZIP_NAME}" "${PLUGIN_ID}")
+          echo "Install zip: ${ZIP_NAME} (folder inside: ${PLUGIN_ID}/)"
+          unzip -l "${ZIP_NAME}"
+          echo "zip=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+
       - name: Publish GitHub Release
         if: steps.meta.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
@@ -96,5 +116,6 @@ jobs:
             manifest.json
             main.js
             styles.css
+            ${{ steps.bundle.outputs.zip }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
