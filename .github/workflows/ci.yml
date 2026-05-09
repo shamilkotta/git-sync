@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify versions.json matches manifest
+        run: |
+          VERSION=$(jq -r .version manifest.json)
+          MIN=$(jq -r .minAppVersion manifest.json)
+          ENTRY=$(jq -r --arg v "$VERSION" '.[$v] // empty' versions.json)
+          if [ -z "$ENTRY" ] || [ "$ENTRY" = "null" ]; then
+            echo "::error::Add \"$VERSION\": \"$MIN\" to versions.json (see obsidian-sample-plugin)."
+            exit 1
+          fi
+          if [ "$ENTRY" != "$MIN" ]; then
+            echo "::error::versions.json[\"$VERSION\"] must equal minAppVersion ($MIN), got $ENTRY"
+            exit 1
+          fi
+
+      - run: pnpm run build
+      - run: pnpm run lint
+      - run: pnpm run check
