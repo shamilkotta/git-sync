@@ -1,5 +1,4 @@
 import esbuild from "esbuild";
-import { builtinModules } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -13,7 +12,11 @@ if you want to view the source, please visit the GitHub repository of this plugi
 */
 `;
 
-const isomorphicGitRoot = path.join(__dirname, "node_modules", "isomorphic-git");
+const isomorphicGitRoot = path.join(
+  __dirname,
+  "node_modules",
+  "isomorphic-git",
+);
 
 const context = await esbuild.context({
   banner: {
@@ -31,7 +34,12 @@ const context = await esbuild.context({
   mainFields: ["browser", "module", "main"],
   alias: {
     "isomorphic-git": path.join(isomorphicGitRoot, "index.js"),
-    "isomorphic-git/http/web": path.join(isomorphicGitRoot, "http", "web", "index.js"),
+    "isomorphic-git/http/web": path.join(
+      isomorphicGitRoot,
+      "http",
+      "web",
+      "index.js",
+    ),
   },
   external: [
     "obsidian",
@@ -47,8 +55,9 @@ const context = await esbuild.context({
     "@lezer/common",
     "@lezer/highlight",
     "@lezer/lr",
-    ...builtinModules,
-    ...builtinModules.map((m) => `node:${m}`),
+    "node:path",
+    "node:process",
+    "node:url",
   ],
   logLevel: "info",
 });

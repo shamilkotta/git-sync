@@ -1,6 +1,6 @@
 {
   "name": "git-sync",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Minimal Obsidian plugin for automatic GitHub sync on desktop and mobile.",
   "main": "main.js",
   "type": "module",
@@ -33,6 +33,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "buffer": "^6.0.3",
     "isomorphic-git": "^1.36.3"
   }
 }

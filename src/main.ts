@@ -1,3 +1,4 @@
+import "./bufferGlobal";
 import { debounce, Notice, Platform, Plugin } from "obsidian";
 import { DesktopGitBackend } from "./desktopGitBackend";
 import type { GitBackend, SyncMode } from "./gitBackend";
