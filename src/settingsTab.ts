@@ -29,19 +29,6 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Remote URL")
-      .setDesc("Required on mobile. Desktop can use the remote already configured in local Git.")
-      .addText((text) =>
-        text
-          .setPlaceholder("https://github.com/user/repo.git")
-          .setValue(this.plugin.settings.remoteUrl)
-          .onChange(async (value) => {
-            this.plugin.settings.remoteUrl = value.trim();
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
       .setName("Branch")
       .setDesc("Branch to sync.")
       .addText((text) =>
@@ -55,7 +42,20 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Mobile GitHub username")
+      .setName("Remote URL")
+      .setDesc("Required on mobile. Desktop can use the remote already configured in local Git.")
+      .addText((text) =>
+        text
+          .setPlaceholder("https://github.com/user/repo.git")
+          .setValue(this.plugin.settings.remoteUrl)
+          .onChange(async (value) => {
+            this.plugin.settings.remoteUrl = value.trim();
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Remote username")
       .setDesc("Used only on mobile for HTTPS GitHub sync.")
       .addText((text) =>
         text.setValue(this.plugin.settings.username).onChange(async (value) => {
@@ -65,7 +65,7 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Mobile GitHub token")
+      .setName("Remote access token")
       .setDesc("Used only on mobile. Desktop uses your local Git credentials.")
       .addText((text) =>
         text.setValue(this.plugin.settings.passwordOrToken).onChange(async (value) => {
