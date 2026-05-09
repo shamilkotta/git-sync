@@ -1,0 +1,38 @@
+{
+  "name": "git-sync",
+  "version": "0.0.1",
+  "description": "Minimal Obsidian plugin for automatic GitHub sync on desktop and mobile.",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "check": "tsc --noEmit",
+    "lint": "oxlint src",
+    "format": "oxfmt src esbuild.config.mjs",
+    "format:check": "oxfmt --check src esbuild.config.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "git",
+    "github",
+    "sync"
+  ],
+  "author": "shamilkotta",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=9"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.4",
+    "obsidian": "^1.8.10",
+    "oxfmt": "^0.16.0",
+    "oxlint": "^1.17.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "isomorphic-git": "^1.36.3"
+  }
+}
