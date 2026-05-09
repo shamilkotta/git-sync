@@ -5,6 +5,8 @@ import type { GitBackend, SyncMode, SyncResult } from "./gitBackend";
 import type { AutoGitSyncSettings } from "./types";
 import { VaultFsAdapter } from "./vaultFsAdapter";
 
+const DEFAULT_CORS_PROXY = "https://cors.isomorphic-git.org";
+
 type GitRepoParams = {
   fs: VaultFsAdapter;
   dir: string;
@@ -129,7 +131,11 @@ export class MobileGitBackend implements GitBackend {
   }
 
   private async pull(repo: GitRepoParams, branch: string): Promise<boolean> {
-    await git.fetch({ ...repo, remote: this.settings.remoteName });
+    await git.fetch({
+      ...repo,
+      remote: this.settings.remoteName,
+      corsProxy: DEFAULT_CORS_PROXY,
+    });
 
     const remoteBranches = await git.listBranches({ ...repo, remote: this.settings.remoteName });
     if (!remoteBranches.includes(branch)) {
@@ -159,6 +165,7 @@ export class MobileGitBackend implements GitBackend {
       ...repo,
       remote: this.settings.remoteName,
       ref: branch,
+      corsProxy: DEFAULT_CORS_PROXY,
     });
   }
 

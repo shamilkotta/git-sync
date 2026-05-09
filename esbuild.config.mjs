@@ -12,11 +12,7 @@ if you want to view the source, please visit the GitHub repository of this plugi
 */
 `;
 
-const isomorphicGitRoot = path.join(
-  __dirname,
-  "node_modules",
-  "isomorphic-git",
-);
+const isomorphicGitRoot = path.join(__dirname, "node_modules", "isomorphic-git");
 
 const context = await esbuild.context({
   banner: {
@@ -34,12 +30,7 @@ const context = await esbuild.context({
   mainFields: ["browser", "module", "main"],
   alias: {
     "isomorphic-git": path.join(isomorphicGitRoot, "index.js"),
-    "isomorphic-git/http/web": path.join(
-      isomorphicGitRoot,
-      "http",
-      "web",
-      "index.js",
-    ),
+    "isomorphic-git/http/web": path.join(isomorphicGitRoot, "http", "web", "index.js"),
   },
   external: [
     "obsidian",
