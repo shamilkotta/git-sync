@@ -54,7 +54,7 @@ export class DesktopGitBackend implements GitBackend {
       };
     }
 
-    await this.git(["add", "-A"]);
+    await this.git(["add", "--", ".", ":(exclude).obsidian", ":(exclude).trash"]);
     await this.git(["commit", "-m", this.createCommitMessage(trigger)]);
     committed = true;
 

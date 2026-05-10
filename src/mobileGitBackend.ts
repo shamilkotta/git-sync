@@ -21,7 +21,6 @@ export class MobileGitBackend implements GitBackend {
   constructor(
     private readonly app: App,
     private readonly settings: AutoGitSyncSettings,
-    private readonly onSetupComplete: () => Promise<void>,
   ) {
     this.fs = new VaultFsAdapter(app.vault);
   }
@@ -29,15 +28,9 @@ export class MobileGitBackend implements GitBackend {
   async sync(_mode: SyncMode, trigger: string): Promise<SyncResult> {
     const repo = this.getRepoParams();
 
-    if (!this.settings.mobileSetupComplete) {
-      return this.initializeMobileRepository(repo, trigger);
-    }
-
     await this.ensureRepository(repo);
-    await this.ensureRemote(repo);
 
     const branch = await this.getOrCreateBranch(repo);
-    await this.ensureRemoteCheckoutIfLocalIsEmpty(repo, branch);
 
     const hasChanges = await this.stageAll(repo);
     let committed = false;
@@ -70,60 +63,6 @@ export class MobileGitBackend implements GitBackend {
     };
   }
 
-  private async initializeMobileRepository(
-    repo: GitRepoParams,
-    trigger: string,
-  ): Promise<SyncResult> {
-    const hadLocalContent = await this.hasLocalContent();
-
-    await this.ensureRepository(repo);
-    await this.ensureRemote(repo);
-
-    const branch = await this.getOrCreateBranch(repo);
-    await this.fetch(repo);
-
-    const hasRemoteBranch = await this.hasRemoteBranch(repo, branch);
-    if (!hasRemoteBranch) {
-      const committed = await this.commitLocalChanges(repo, trigger);
-      if (committed) {
-        await this.push(repo, branch);
-      }
-      await this.completeSetup();
-      return {
-        pulled: false,
-        committed,
-        pushed: committed,
-        message: committed
-          ? "Initialized mobile repo and published local vault."
-          : "Initialized mobile repo. Add files to publish.",
-      };
-    }
-
-    if (!hadLocalContent) {
-      await this.checkoutRemoteBranch(repo, branch);
-      await this.ensureRemoteFilesWereCheckedOut(repo, branch);
-      await this.completeSetup();
-      return {
-        pulled: true,
-        committed: false,
-        pushed: false,
-        message: "Initialized mobile repo from remote.",
-      };
-    }
-
-    const committed = await this.commitLocalChanges(repo, trigger);
-    const pulled = await this.mergeRemoteBranch(repo, branch);
-    await this.pushWithRetry(repo, branch);
-    await this.completeSetup();
-
-    return {
-      pulled,
-      committed,
-      pushed: true,
-      message: "Initialized mobile repo by merging remote with local vault.",
-    };
-  }
-
   private getRepoParams(): GitRepoParams {
     return {
       fs: this.fs,
@@ -147,9 +86,7 @@ export class MobileGitBackend implements GitBackend {
         defaultBranch: this.settings.branch || "main",
       });
     }
-  }
 
-  private async ensureRemote(repo: GitRepoParams): Promise<void> {
     if (!this.settings.remoteUrl) {
       throw new Error("Set a remote URL before syncing on mobile.");
     }
@@ -230,96 +167,6 @@ export class MobileGitBackend implements GitBackend {
     return true;
   }
 
-  private async checkoutRemoteBranch(repo: GitRepoParams, branch: string): Promise<void> {
-    const remoteRef = `${this.settings.remoteName}/${branch}`;
-    const remoteOid = await git.resolveRef({ ...repo, ref: remoteRef });
-
-    await git.writeRef({
-      ...repo,
-      ref: `refs/heads/${branch}`,
-      value: remoteOid,
-      force: true,
-    });
-    await git.checkout({ ...repo, ref: branch, force: true });
-  }
-
-  private async ensureRemoteCheckoutIfLocalIsEmpty(
-    repo: GitRepoParams,
-    branch: string,
-  ): Promise<void> {
-    await this.fetch(repo);
-
-    if (!(await this.hasRemoteBranch(repo, branch))) {
-      return;
-    }
-
-    if (await this.hasLocalHeadCommit(repo)) {
-      return;
-    }
-
-    if (await this.hasLocalContent()) {
-      return;
-    }
-
-    await this.checkoutRemoteBranch(repo, branch);
-    await this.ensureRemoteFilesWereCheckedOut(repo, branch);
-    await this.completeSetup();
-  }
-
-  private async hasLocalHeadCommit(repo: GitRepoParams): Promise<boolean> {
-    try {
-      await git.resolveRef({ ...repo, ref: "HEAD" });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async ensureRemoteFilesWereCheckedOut(
-    repo: GitRepoParams,
-    branch: string,
-  ): Promise<void> {
-    const remoteFiles = await this.listRemoteFiles(repo, branch);
-    if (remoteFiles.length === 0) {
-      return;
-    }
-
-    const missingFiles = [];
-    for (const filepath of remoteFiles) {
-      if (!(await this.app.vault.adapter.exists(filepath))) {
-        missingFiles.push(filepath);
-      }
-    }
-
-    if (missingFiles.length > 0) {
-      throw new Error(
-        `Remote checkout did not write ${missingFiles.length} file(s). First missing file: ${missingFiles[0]}`,
-      );
-    }
-  }
-
-  private async listRemoteFiles(repo: GitRepoParams, branch: string): Promise<string[]> {
-    const remoteRef = `${this.settings.remoteName}/${branch}`;
-    const oid = await git.resolveRef({ ...repo, ref: remoteRef });
-    const files: string[] = [];
-
-    await git.walk({
-      ...repo,
-      trees: [git.TREE({ ref: oid })],
-      map: async (filepath, [entry]) => {
-        if (filepath === "." || !entry) {
-          return;
-        }
-
-        if ((await entry.type()) === "blob") {
-          files.push(filepath);
-        }
-      },
-    });
-
-    return files;
-  }
-
   private async pushWithRetry(repo: GitRepoParams, branch: string): Promise<void> {
     try {
       await this.push(repo, branch);
@@ -342,67 +189,24 @@ export class MobileGitBackend implements GitBackend {
     const matrix = await git.statusMatrix(repo);
     let changed = false;
 
-    for (const [filepath, head, workdir] of matrix) {
-      if (head === 1 && workdir === 0) {
-        await git.remove({ ...repo, filepath });
-        changed = true;
+    const FILE = 0;
+    const WORKDIR = 2;
+    const STAGE = 3;
+
+    for (const row of matrix) {
+      if (row[WORKDIR] === row[STAGE]) {
         continue;
       }
 
-      if ((head === 1 && workdir === 2) || (head === 0 && workdir === 2)) {
-        await git.add({ ...repo, filepath });
-        changed = true;
+      if (row[WORKDIR] === 0) {
+        await git.remove({ ...repo, filepath: row[FILE] });
+      } else {
+        await git.add({ ...repo, filepath: row[FILE] });
       }
+      changed = true;
     }
 
     return changed;
-  }
-
-  private async commitLocalChanges(repo: GitRepoParams, trigger: string): Promise<boolean> {
-    const hasChanges = await this.stageAll(repo);
-    if (!hasChanges) {
-      return false;
-    }
-
-    await git.commit({
-      ...repo,
-      message: this.createCommitMessage(trigger),
-      author: this.syncAuthor(),
-    });
-    return true;
-  }
-
-  private async hasLocalContent(path = "/"): Promise<boolean> {
-    const list = await this.app.vault.adapter.list(path);
-    const entries = [...list.files, ...list.folders].filter(
-      (entry) => !this.isIgnoredSetupPath(entry),
-    );
-
-    for (const entry of entries) {
-      const stat = await this.app.vault.adapter.stat(entry);
-      if (!stat) {
-        continue;
-      }
-
-      if (stat.type === "file") {
-        return true;
-      }
-
-      if (await this.hasLocalContent(entry)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private isIgnoredSetupPath(path: string): boolean {
-    return path === "/.git" || path.startsWith("/.git/") || path === "/.obsidian";
-  }
-
-  private async completeSetup(): Promise<void> {
-    this.settings.mobileSetupComplete = true;
-    await this.onSetupComplete();
   }
 
   private createCommitMessage(trigger: string): string {

@@ -1,4 +1,4 @@
-import { Platform, PluginSettingTab, Setting } from "obsidian";
+import { PluginSettingTab, Setting } from "obsidian";
 import type AutoGitSyncPlugin from "./main";
 
 export class AutoGitSyncSettingTab extends PluginSettingTab {
@@ -24,9 +24,6 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.remoteName)
           .onChange(async (value) => {
             const remoteName = value.trim() || "origin";
-            if (remoteName !== this.plugin.settings.remoteName) {
-              this.plugin.settings.mobileSetupComplete = false;
-            }
             this.plugin.settings.remoteName = remoteName;
             await this.plugin.saveSettings();
           }),
@@ -41,9 +38,6 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.branch)
           .onChange(async (value) => {
             const branch = value.trim() || "main";
-            if (branch !== this.plugin.settings.branch) {
-              this.plugin.settings.mobileSetupComplete = false;
-            }
             this.plugin.settings.branch = branch;
             await this.plugin.saveSettings();
           }),
@@ -58,9 +52,6 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.remoteUrl)
           .onChange(async (value) => {
             const remoteUrl = value.trim();
-            if (remoteUrl !== this.plugin.settings.remoteUrl) {
-              this.plugin.settings.mobileSetupComplete = false;
-            }
             this.plugin.settings.remoteUrl = remoteUrl;
             await this.plugin.saveSettings();
           }),
@@ -101,11 +92,7 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Sync now")
-      .setDesc(
-        Platform.isMobileApp && !this.plugin.settings.mobileSetupComplete
-          ? "Run the safe first-time mobile setup before automatic sync starts."
-          : "Run one manual sync to verify credentials and remote.",
-      )
+      .setDesc("Run one manual sync to verify credentials and remote.")
       .addButton((button) =>
         button
           .setButtonText("Run")

@@ -5,7 +5,6 @@ export interface AutoGitSyncSettings {
   username: string;
   passwordOrToken: string;
   syncDebounceMs: number;
-  mobileSetupComplete: boolean;
 }
 
 export const DEFAULT_SETTINGS: AutoGitSyncSettings = {
@@ -15,5 +14,4 @@ export const DEFAULT_SETTINGS: AutoGitSyncSettings = {
   username: "",
   passwordOrToken: "",
   syncDebounceMs: 5000,
-  mobileSetupComplete: false,
 };

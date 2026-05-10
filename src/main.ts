@@ -78,9 +78,7 @@ export default class AutoGitSyncPlugin extends Plugin {
     if (Platform.isDesktopApp) {
       return new DesktopGitBackend(this.app, this.settings);
     }
-    return new MobileGitBackend(this.app, this.settings, async () => {
-      await this.saveData(this.settings);
-    });
+    return new MobileGitBackend(this.app, this.settings);
   }
 
   private async queueSync(mode: SyncMode, trigger: string): Promise<void> {
