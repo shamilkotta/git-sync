@@ -194,19 +194,31 @@ export class MobileGitBackend implements GitBackend {
     const STAGE = 3;
 
     for (const row of matrix) {
+      const filepath = row[FILE];
+      if (this.isExcludedFromStaging(filepath)) {
+        continue;
+      }
+
       if (row[WORKDIR] === row[STAGE]) {
         continue;
       }
 
       if (row[WORKDIR] === 0) {
-        await git.remove({ ...repo, filepath: row[FILE] });
+        await git.remove({ ...repo, filepath });
       } else {
-        await git.add({ ...repo, filepath: row[FILE] });
+        await git.add({ ...repo, filepath });
       }
       changed = true;
     }
 
     return changed;
+  }
+
+  private isExcludedFromStaging(filepath: string): boolean {
+    const p = filepath.replace(/^\/+/, "").replace(/^\.\//, "");
+    return (
+      p === ".obsidian" || p.startsWith(".obsidian/") || p === ".trash" || p.startsWith(".trash/")
+    );
   }
 
   private createCommitMessage(trigger: string): string {
