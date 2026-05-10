@@ -37,6 +37,8 @@ export class MobileGitBackend implements GitBackend {
     await this.ensureRemote(repo);
 
     const branch = await this.getOrCreateBranch(repo);
+    await this.ensureRemoteCheckoutIfLocalIsEmpty(repo, branch);
+
     const hasChanges = await this.stageAll(repo);
     let committed = false;
 
@@ -99,6 +101,7 @@ export class MobileGitBackend implements GitBackend {
 
     if (!hadLocalContent) {
       await this.checkoutRemoteBranch(repo, branch);
+      await this.ensureRemoteFilesWereCheckedOut(repo, branch);
       await this.completeSetup();
       return {
         pulled: true,
@@ -237,7 +240,84 @@ export class MobileGitBackend implements GitBackend {
       value: remoteOid,
       force: true,
     });
-    await git.checkout({ ...repo, ref: branch });
+    await git.checkout({ ...repo, ref: branch, force: true });
+  }
+
+  private async ensureRemoteCheckoutIfLocalIsEmpty(
+    repo: GitRepoParams,
+    branch: string,
+  ): Promise<void> {
+    await this.fetch(repo);
+
+    if (!(await this.hasRemoteBranch(repo, branch))) {
+      return;
+    }
+
+    if (await this.hasLocalHeadCommit(repo)) {
+      return;
+    }
+
+    if (await this.hasLocalContent()) {
+      return;
+    }
+
+    await this.checkoutRemoteBranch(repo, branch);
+    await this.ensureRemoteFilesWereCheckedOut(repo, branch);
+    await this.completeSetup();
+  }
+
+  private async hasLocalHeadCommit(repo: GitRepoParams): Promise<boolean> {
+    try {
+      await git.resolveRef({ ...repo, ref: "HEAD" });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async ensureRemoteFilesWereCheckedOut(
+    repo: GitRepoParams,
+    branch: string,
+  ): Promise<void> {
+    const remoteFiles = await this.listRemoteFiles(repo, branch);
+    if (remoteFiles.length === 0) {
+      return;
+    }
+
+    const missingFiles = [];
+    for (const filepath of remoteFiles) {
+      if (!(await this.app.vault.adapter.exists(filepath))) {
+        missingFiles.push(filepath);
+      }
+    }
+
+    if (missingFiles.length > 0) {
+      throw new Error(
+        `Remote checkout did not write ${missingFiles.length} file(s). First missing file: ${missingFiles[0]}`,
+      );
+    }
+  }
+
+  private async listRemoteFiles(repo: GitRepoParams, branch: string): Promise<string[]> {
+    const remoteRef = `${this.settings.remoteName}/${branch}`;
+    const oid = await git.resolveRef({ ...repo, ref: remoteRef });
+    const files: string[] = [];
+
+    await git.walk({
+      ...repo,
+      trees: [git.TREE({ ref: oid })],
+      map: async (filepath, [entry]) => {
+        if (filepath === "." || !entry) {
+          return;
+        }
+
+        if ((await entry.type()) === "blob") {
+          files.push(filepath);
+        }
+      },
+    });
+
+    return files;
   }
 
   private async pushWithRetry(repo: GitRepoParams, branch: string): Promise<void> {
