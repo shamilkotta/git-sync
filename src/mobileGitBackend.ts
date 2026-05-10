@@ -78,7 +78,12 @@ export class MobileGitBackend implements GitBackend {
   private async ensureRepository(repo: GitRepoParams): Promise<void> {
     const gitHeadExists = await this.app.vault.adapter.exists("/.git/HEAD");
     if (!gitHeadExists) {
-      await git.init(repo);
+      await git.init({
+        fs: repo.fs,
+        dir: repo.dir,
+        gitdir: repo.gitdir,
+        defaultBranch: this.settings.branch || "main",
+      });
     }
   }
 
@@ -144,6 +149,7 @@ export class MobileGitBackend implements GitBackend {
       ours: branch,
       theirs: `${this.settings.remoteName}/${branch}`,
       fastForwardOnly: false,
+      allowUnrelatedHistories: true,
       author: this.syncAuthor(),
       committer: this.syncAuthor(),
     });
