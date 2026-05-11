@@ -170,6 +170,12 @@ export class MobileGitBackend implements GitBackend {
       author: this.syncAuthor(),
       committer: this.syncAuthor(),
     });
+
+    await git.checkout({
+      ...repo,
+      ref: branch,
+      force: true,
+    });
     return true;
   }
 
