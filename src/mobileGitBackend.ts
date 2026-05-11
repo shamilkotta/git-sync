@@ -155,6 +155,12 @@ export class MobileGitBackend implements GitBackend {
   }
 
   private async mergeRemoteBranch(repo: GitRepoParams, branch: string): Promise<boolean> {
+    const localCommits = await this.listCommitOids(repo, branch);
+    if (localCommits.length === 0) {
+      await this.createLocalBranchFromRemote(repo, branch);
+      return true;
+    }
+
     await git.merge({
       ...repo,
       ours: branch,
@@ -165,6 +171,36 @@ export class MobileGitBackend implements GitBackend {
       committer: this.syncAuthor(),
     });
     return true;
+  }
+
+  private async createLocalBranchFromRemote(repo: GitRepoParams, branch: string): Promise<void> {
+    const remoteRef = `refs/remotes/${this.settings.remoteName}/${branch}`;
+    const remoteOid = await git.resolveRef({
+      ...repo,
+      ref: remoteRef,
+    });
+
+    await git.writeRef({
+      ...repo,
+      ref: `refs/heads/${branch}`,
+      value: remoteOid,
+      force: true,
+    });
+
+    await git.checkout({
+      ...repo,
+      ref: branch,
+      force: true,
+    });
+  }
+
+  private async listCommitOids(repo: GitRepoParams, ref: string): Promise<string[]> {
+    try {
+      const commits = await git.log({ ...repo, ref });
+      return commits.map((commit) => commit.oid);
+    } catch {
+      return [];
+    }
   }
 
   private async pushWithRetry(repo: GitRepoParams, branch: string): Promise<void> {
