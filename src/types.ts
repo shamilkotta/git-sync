@@ -13,5 +13,5 @@ export const DEFAULT_SETTINGS: AutoGitSyncSettings = {
   branch: "main",
   username: "",
   passwordOrToken: "",
-  syncDebounceMs: 5000,
+  syncDebounceMs: 1000 * 30,
 };
