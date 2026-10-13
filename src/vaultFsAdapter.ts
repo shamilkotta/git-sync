@@ -70,11 +70,11 @@ export class VaultFsAdapter {
   async readdir(path: string): Promise<string[]> {
     const targetPath = path === "." ? "/" : path;
     const list = await this.adapter.list(targetPath);
-    const all = [...list.files, ...list.folders];
-    if (targetPath === "/") {
-      return all;
-    }
-    return all.map((entry) => normalizePath(entry.substring(targetPath.length)));
+    // `list` returns vault-relative paths; fs.readdir must return bare entry names.
+    return [...list.files, ...list.folders].map((entry) => {
+      const normalized = normalizePath(entry);
+      return normalized.slice(normalized.lastIndexOf("/") + 1);
+    });
   }
 
   async mkdir(path: string): Promise<void> {

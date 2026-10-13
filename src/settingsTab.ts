@@ -70,12 +70,13 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Remote access token")
       .setDesc("Used only on mobile. Desktop uses your local Git credentials.")
-      .addText((text) =>
+      .addText((text) => {
+        text.inputEl.type = "password";
         text.setValue(this.plugin.settings.passwordOrToken).onChange(async (value) => {
           this.plugin.settings.passwordOrToken = value.trim();
           await this.plugin.saveSettings();
-        }),
-      );
+        });
+      });
 
     new Setting(containerEl)
       .setName("Sync debounce (ms)")
@@ -85,6 +86,19 @@ export class AutoGitSyncSettingTab extends PluginSettingTab {
           const parsed = Number(value);
           if (Number.isFinite(parsed) && parsed >= 500) {
             this.plugin.settings.syncDebounceMs = parsed;
+            await this.plugin.saveSettings();
+          }
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Pull interval (minutes)")
+      .setDesc("Periodically pull remote changes. Set to 0 to disable.")
+      .addText((text) =>
+        text.setValue(String(this.plugin.settings.pullIntervalMinutes)).onChange(async (value) => {
+          const parsed = Number(value);
+          if (Number.isFinite(parsed) && parsed >= 0) {
+            this.plugin.settings.pullIntervalMinutes = parsed;
             await this.plugin.saveSettings();
           }
         }),

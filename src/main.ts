@@ -1,23 +1,29 @@
 import "./bufferGlobal";
-import { debounce, Notice, Platform, Plugin } from "obsidian";
+import { debounce, type Debouncer, Notice, Platform, Plugin } from "obsidian";
 import { DesktopGitBackend } from "./desktopGitBackend";
 import type { GitBackend, SyncMode } from "./gitBackend";
 import { MobileGitBackend } from "./mobileGitBackend";
 import { AutoGitSyncSettingTab } from "./settingsTab";
 import { DEFAULT_SETTINGS, type AutoGitSyncSettings } from "./types";
 
+type SyncRequest = { mode: SyncMode; trigger: string };
+
+/** Triggers initiated explicitly by the user: always report the outcome. */
+const MANUAL_TRIGGERS = new Set(["command", "manual"]);
+
 export default class AutoGitSyncPlugin extends Plugin {
   public settings: AutoGitSyncSettings = DEFAULT_SETTINGS;
 
   private gitBackend: GitBackend | null = null;
   private isSyncing = false;
-  private pendingSync: { mode: SyncMode; trigger: string } | null = null;
-  private skipEventsUntil = 0;
-  private debouncedSync: () => void = () => undefined;
+  private pendingSync: SyncRequest | null = null;
+  private debouncedSync: Debouncer<[], void> | null = null;
+  private debounceWait = 0;
+  private pullIntervalId: number | null = null;
+  private lastErrorMessage: string | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
-    this.gitBackend = this.createGitBackend();
     this.rebuildDebouncer();
 
     this.addSettingTab(new AutoGitSyncSettingTab(this));
@@ -29,23 +35,32 @@ export default class AutoGitSyncPlugin extends Plugin {
       },
     });
 
-    void this.queueSync("startup", "startup");
+    // Obsidian emits a `create` event for every file while indexing the vault on startup;
+    // only start listening once the layout is ready.
+    this.app.workspace.onLayoutReady(() => {
+      const onVaultChange = () => this.debouncedSync?.();
+      this.registerEvent(this.app.vault.on("create", onVaultChange));
+      this.registerEvent(this.app.vault.on("modify", onVaultChange));
+      this.registerEvent(this.app.vault.on("delete", onVaultChange));
+      this.registerEvent(this.app.vault.on("rename", onVaultChange));
 
-    const onVaultChange = () => {
-      if (Date.now() < this.skipEventsUntil) {
-        return;
-      }
-      this.debouncedSync();
-    };
+      this.registerDomEvent(document, "visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          // Mobile apps may be suspended in the background: push pending edits now.
+          this.debouncedSync?.run();
+        } else {
+          void this.queueSync({ mode: "full", trigger: "resume" });
+        }
+      });
 
-    this.registerEvent(this.app.vault.on("create", onVaultChange));
-    this.registerEvent(this.app.vault.on("modify", onVaultChange));
-    this.registerEvent(this.app.vault.on("delete", onVaultChange));
-    this.registerEvent(this.app.vault.on("rename", onVaultChange));
+      this.restartPullInterval();
+      void this.queueSync({ mode: "full", trigger: "startup" });
+    });
   }
 
   onunload(): void {
-    this.debouncedSync = () => undefined;
+    this.debouncedSync?.cancel();
+    this.stopPullInterval();
   }
 
   async loadSettings(): Promise<void> {
@@ -55,23 +70,51 @@ export default class AutoGitSyncPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
-    this.gitBackend = this.createGitBackend();
+    // Recreated lazily on the next sync so it picks up the new settings.
+    this.gitBackend = null;
     this.rebuildDebouncer();
+    if (this.app.workspace.layoutReady) {
+      this.restartPullInterval();
+    }
   }
 
   async syncNow(trigger: string): Promise<void> {
-    await this.queueSync("full", trigger);
+    await this.queueSync({ mode: "full", trigger });
   }
 
   private rebuildDebouncer(): void {
     const wait = Math.max(500, this.settings.syncDebounceMs);
+    if (this.debouncedSync && wait === this.debounceWait) {
+      return;
+    }
+
+    // Flush anything pending on the old debouncer rather than dropping it.
+    this.debouncedSync?.run();
+    this.debounceWait = wait;
     this.debouncedSync = debounce(
       () => {
-        void this.queueSync("full", "vault-change");
+        void this.queueSync({ mode: "local", trigger: "vault-change" });
       },
       wait,
       true,
     );
+  }
+
+  private restartPullInterval(): void {
+    this.stopPullInterval();
+    const minutes = this.settings.pullIntervalMinutes;
+    if (minutes > 0) {
+      this.pullIntervalId = window.setInterval(() => {
+        void this.queueSync({ mode: "full", trigger: "interval" });
+      }, minutes * 60_000);
+    }
+  }
+
+  private stopPullInterval(): void {
+    if (this.pullIntervalId !== null) {
+      window.clearInterval(this.pullIntervalId);
+      this.pullIntervalId = null;
+    }
   }
 
   private createGitBackend(): GitBackend {
@@ -81,26 +124,17 @@ export default class AutoGitSyncPlugin extends Plugin {
     return new MobileGitBackend(this.app, this.settings);
   }
 
-  private async queueSync(mode: SyncMode, trigger: string): Promise<void> {
-    this.pendingSync = this.mergePendingSync(this.pendingSync, { mode, trigger });
-    await this.runSyncLoop();
-  }
+  /** Requests are coalesced: at most one sync runs, and at most one more is queued behind it. */
+  private async queueSync(request: SyncRequest): Promise<void> {
+    this.pendingSync = this.pendingSync
+      ? {
+          mode: this.pendingSync.mode === "full" || request.mode === "full" ? "full" : "local",
+          trigger: MANUAL_TRIGGERS.has(this.pendingSync.trigger)
+            ? this.pendingSync.trigger
+            : request.trigger,
+        }
+      : request;
 
-  private mergePendingSync(
-    current: { mode: SyncMode; trigger: string } | null,
-    next: { mode: SyncMode; trigger: string },
-  ): { mode: SyncMode; trigger: string } {
-    if (!current) {
-      return next;
-    }
-
-    return {
-      mode: current.mode === "full" || next.mode === "full" ? "full" : "startup",
-      trigger: next.trigger,
-    };
-  }
-
-  private async runSyncLoop(): Promise<void> {
     if (this.isSyncing) {
       return;
     }
@@ -108,42 +142,35 @@ export default class AutoGitSyncPlugin extends Plugin {
     this.isSyncing = true;
     try {
       while (this.pendingSync) {
-        const syncRequest = this.pendingSync;
+        const next = this.pendingSync;
         this.pendingSync = null;
-        await this.syncOnce(syncRequest.mode, syncRequest.trigger);
+        await this.syncOnce(next);
       }
     } finally {
       this.isSyncing = false;
     }
   }
 
-  private async syncOnce(mode: SyncMode, trigger: string): Promise<void> {
+  private async syncOnce({ mode, trigger }: SyncRequest): Promise<void> {
+    const manual = MANUAL_TRIGGERS.has(trigger);
     try {
-      if (!this.gitBackend) {
-        this.gitBackend = this.createGitBackend();
-      }
-
-      this.skipEventsUntil = Date.now() + Math.max(1500, this.settings.syncDebounceMs / 2);
+      this.gitBackend ??= this.createGitBackend();
       const result = await this.gitBackend.sync(mode, trigger);
-      this.skipEventsUntil = Date.now() + Math.max(1500, this.settings.syncDebounceMs / 2);
-      if (this.isManualSuccessNoticeTrigger(trigger)) {
+      this.lastErrorMessage = null;
+
+      if (manual) {
         new Notice(`Git Sync: ${result.message}`);
+      } else if (result.conflicts.length > 0) {
+        new Notice(`Git Sync: ${result.message}\n${result.conflicts.join("\n")}`, 10_000);
       }
     } catch (error) {
       console.error("Git Sync failed", error);
-      new Notice(`Git Sync failed: ${this.getErrorMessage(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      // Don't spam the same error on every automatic sync (e.g. while offline).
+      if (manual || message !== this.lastErrorMessage) {
+        new Notice(`Git Sync failed: ${message}`);
+      }
+      this.lastErrorMessage = message;
     }
-  }
-
-  /** Success toasts only for explicit user actions (command palette / settings). */
-  private isManualSuccessNoticeTrigger(trigger: string): boolean {
-    return trigger === "command" || trigger === "manual";
-  }
-
-  private getErrorMessage(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message;
-    }
-    return String(error);
   }
 }
